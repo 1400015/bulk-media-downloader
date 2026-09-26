@@ -15,11 +15,10 @@
         <ul>
           <li>Refresh the active tab or a tab that you want to grab media resources (image, audio or video) from.</li>
           <li>If there is a video source in the tab, it needs to be streamed for the media source to be grabbed.</li>
-          <li>When the intended resource is grabbed, make sure to press the "Pause" button to release network observer and prevent cluttering of this window with new resources.</li>
-          <li class="chrome">Detection of YouTube resources is locked because of restrictions of the Chrome Store.</li>
+          <li>Media detection now runs in the background even when this window is closed; open the window to review and download what was captured.</li>
+          <li>Use the HLS filter and the "Download HLS" button to fetch all segments of a selected .m3u8 manifest and save them as a single .ts file.</li>
           <li>To download full-size images, use <a href="https://webextension.org/listing/save-images.html" target="_blank">Download all Images</a> extension.</li>
           <li>To convert media files to MP3 format, use <a href="https://webextension.org/listing/mp3-converter.html" target="_blank">MP3 Converter</a> extension.</li>
-          <li>To download HLS (Live Streams or M3U8), use <a href="https://webextension.org/listing/hls-downloader.html" target="_blank">Live Stream Downloader</a> extension.</li>
         </ul>
       </details>
     </div>
@@ -70,6 +69,7 @@
       <li data-cmd="select-video">Select all videos</li>
       <li data-cmd="select-audio">Select all audios</li>
       <li data-cmd="select-application">Select all applications</li>
+      <li data-cmd="select-hls">Select all HLS streams</li>
       <li data-cmd="select-none">Select none</li>
     </ul>
     <ul type="filter">
@@ -78,6 +78,7 @@
       <li data-cmd="filter-video">Type (video)</li>
       <li data-cmd="filter-audio">Type (audio)</li>
       <li data-cmd="filter-image">Type (image)</li>
+      <li data-cmd="filter-hls">Type (hls)</li>
       <li data-cmd="filter-application">Type (application)</li>
     </ul>
     <ul type="size">
@@ -108,6 +109,7 @@
     <label><input type="checkbox" value="images"><span class="icon-"></span> Image</label>
     <label><input type="checkbox" value="videos"><span class="icon-"></span> Video</label>
     <label><input type="checkbox" value="audios"><span class="icon-"></span> Audio</label>
+    <label><input type="checkbox" value="hls"><span class="icon-"></span> HLS</label>
     <label><input type="checkbox" value="archives"><span class="icon-"></span> Archive</label>
     <label><input type="checkbox" value="documents"><span class="icon-"></span> Document</label>
     <label><input type="checkbox" value="tab"><span class="icon-"></span> Tab</label>
@@ -116,6 +118,7 @@
   <div id="tools">
     <input data-cmd="pause" type="button" value="Pause">
     <input data-cmd="download-browser" type="button" disabled=true value="Download" title="Download with the biult-in download manager">
+    <input data-cmd="hls-download" type="button" disabled=true value="Download HLS" title="Fetch all segments of the selected .m3u8 manifest and save as a single .ts file">
     <input data-cmd="copy-links" type="button" disabled=true value="Copy Links" title="Copy links of all selected items">
     <input data-cmd="clear" type="button" value="Clear List">
   </div>
