@@ -38,12 +38,14 @@ $.filters = {
   documents: document.querySelector('#filters [value="documents"]'),
   tab: document.querySelector('#filters [value="tab"]'),
   archives: document.querySelector('#filters [value="archives"]'),
+  hls: document.querySelector('#filters [value="hls"]'),
   regexp: document.querySelector('#filters [type=text]')
 };
 
 $.buttons = {
   browser: document.querySelector('[data-cmd="download-browser"]'),
-  links: document.querySelector('[data-cmd="copy-links"]')
+  links: document.querySelector('[data-cmd="copy-links"]'),
+  hls: document.querySelector('[data-cmd="hls-download"]')
 };
 
 $.external = {

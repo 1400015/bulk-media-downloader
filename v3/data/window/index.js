@@ -26,6 +26,8 @@ const stats = {
   media: 0
 };
 
+let urls = [];
+
 const ui = {
   append(request) {
     if (urls.indexOf(request.url) !== -1) {
@@ -54,6 +56,12 @@ const ui = {
     tr.dataset.filename = tds[5].title = tds[5].textContent = findTitle(request);
 
     tr.dataset.tabId = request.tabId;
+    if (request.hls) {
+      tr.dataset.hls = 'true';
+    }
+    if (request.dash) {
+      tr.dataset.dash = 'true';
+    }
 
     const shouldScroll = $.links.scrollHeight - $.links.clientHeight === $.links.scrollTop;
     $.tbody.appendChild(tr);
@@ -72,10 +80,6 @@ const monitor = {
     if (d.tabId === -1) {
       return;
     }
-    // prevent YouTube video link detection
-    if (d.url.indexOf('googlevideo.') !== -1) {
-      return;
-    }
     let type = d.responseHeaders.filter(o => o.name === 'content-type' || o.name === 'Content-Type');
 
     // remove range from stream URL if possible;
@@ -89,10 +93,16 @@ const monitor = {
         .filter(o => o.name === 'content-length' || o.name === 'Content-Length')
         .map(l => l.value).shift();
 
+      const isHls = type.startsWith('application/vnd.apple.mpegurl') ||
+        type.startsWith('application/x-mpegurl') || /\.m3u8(\?|$)/i.test(d.url);
+      const isDash = type.startsWith('application/dash+xml') || /\.mpd(\?|$)/i.test(d.url);
+
       if (
         type.startsWith('image') ||
         type.startsWith('video') ||
         type.startsWith('audio') ||
+        isHls ||
+        isDash ||
         (type.startsWith('application') && type.indexOf('javascript') === -1)
       ) {
         stats.media += 1;
@@ -109,6 +119,8 @@ const monitor = {
             .map(o => o.value)
             .shift(),
           type,
+          hls: isHls,
+          dash: isDash,
           stats
         });
       }
@@ -146,10 +158,9 @@ const is = {
   audio: tr => tr.dataset.type === 'audio' || /\.(adp|au|snd|mid|midi|kar|rmi|m4a|mp3|mpga|mp2|mp2a|m2a|m3a|oga|ogg|spx|s3m|sil|uva|uvva|eol|dra|dts|dtshd|lvp|pya|rip|weba|aac|aif|aiff|aifc|caf|flac|mka|m3u|wax|wma|ra|rmp|wav)$/.test(tr.dataset.url),
   archive: tr => tr.dataset.type === 'archive' || /\.(zip|rar|jar|apk|xpi|crx|joda|tao)$/.test(tr.dataset.url),
   image: tr => tr.dataset.type === 'image' || /\.(bmp|cgm|g3|gif|ief|jpeg|jpg|jpe|ktx|png|btif|sgi|svg|svgz|tiff|tif|psd|uvi|uvvi|uvg|uvvg|djv|sub|dwg|dxf|fbs|fpx|fst|mmr|rlc|mdi|wdp|npx|wbmp|xif|webp|3ds|ras|cmx|fh|fhc|fh4|fh5|fh7|ico|sid|pcx|pic|pct|pnm|pbm|pgm|ppm|rgb|tga|xbm|xpm|xwd)$/.test(tr.dataset.url),
+  hls: tr => tr.dataset.hls === 'true' || /\.m3u8(\?|$)/i.test(tr.dataset.url),
   tab: tr => tr.dataset.tabId === document.body.dataset.tabId
 };
-
-let urls = [];
 
 const config = {
   _filter: 'all',
@@ -168,6 +179,7 @@ Object.defineProperty(config, 'filter', {
     document.body.dataset.filterAudio = val === 'audio' || val === 'all' || val === 'media';
     document.body.dataset.filterImage = val === 'image' || val === 'all';
     document.body.dataset.filterApp = val === 'application' || val === 'all';
+    document.body.dataset.filterHls = val === 'hls' || val === 'all' || val === 'media';
     $.filter.textContent = `Type (${val})`;
     persist.save('filter', val);
   }
@@ -180,6 +192,9 @@ Object.defineProperty(config, 'monitor', {
   },
   set(val) {
     config._monitor = val;
+    chrome.runtime.sendMessage({
+      cmd: val ? 'grabber-resumed' : 'grabber-paused'
+    });
     if (val) {
       monitor.activate();
     }
@@ -220,6 +235,7 @@ async function notify(message) {
     setTimeout(chrome.notifications.clear, 3000, id);
   }
 }
+
 function visible(e) {
   return Boolean(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
 }
@@ -228,6 +244,7 @@ function state() {
   const disabled = [...$.links.querySelectorAll('[type=checkbox]:checked')].filter(visible).length === 0;
   $.buttons.browser.disabled =
   $.buttons.links.disabled =
+  $.buttons.hls.disabled =
   $.external.run.disabled =
     disabled;
 }
@@ -255,6 +272,9 @@ function isChecked(tr) {
     }
     if ($.filters.documents.checked) {
       checked = checked || is.document(tr);
+    }
+    if ($.filters.hls.checked) {
+      checked = checked || is.hls(tr);
     }
     if ($.filters.tab.checked) {
       checked = checked || is.tab(tr);
@@ -312,7 +332,36 @@ document.addEventListener('click', async e => {
   else if (cmd === 'clear') {
     $.tbody.textContent = '';
     urls = [];
+    stats.total = 0;
+    stats.media = 0;
+    $.stats.textContent = '0/0';
+    chrome.runtime.sendMessage({cmd: 'replace-items', items: []});
     state();
+  }
+  else if (cmd === 'hls-download') {
+    const trs = [...$.links.querySelectorAll(':checked')]
+      .filter(item => visible(item))
+      .map(e => e.closest('tr'))
+      .filter(tr => is.hls(tr));
+    if (trs.length === 0) {
+      window.alert('Select at least one HLS (.m3u8) resource first');
+      return;
+    }
+    for (const tr of trs) {
+      const id = tr.dataset.id + '-' + Date.now();
+      tr.dataset.job = id;
+      tr.dataset.hlsStatus = 'queued';
+      chrome.runtime.sendMessage({
+        cmd: 'hls-download',
+        job: {
+          id,
+          url: tr.dataset.url,
+          referrer: tr.dataset.referrer,
+          filename: tr.dataset.filename
+        }
+      });
+    }
+    notify(trs.length + ' HLS job' + (trs.length > 1 ? 's are' : ' is') + ' queued');
   }
   else if (cmd === 'download-browser') {
     const items = [...$.links.querySelectorAll(':checked')]
@@ -436,14 +485,67 @@ const referrer = (() => {
   };
 })();
 
+const pendingJobs = {};
+
+function applyJob(id, message) {
+  const tr = $.tbody.querySelector(`tr[data-job="${id}"]`);
+  if (!tr) {
+    pendingJobs[id] = message;
+    return;
+  }
+  const cell = tr.querySelector('td:nth-child(6)');
+  if (message.status === 'running') {
+    tr.dataset.hlsStatus = 'downloading ' + message.done + '/' + message.total;
+  }
+  else if (message.status === 'done') {
+    tr.dataset.hlsStatus = 'done \u2713';
+    tr.dataset.error = false;
+    notify('HLS download completed: ' + (tr.dataset.filename || ''));
+  }
+  else if (message.status === 'error') {
+    tr.dataset.hlsStatus = 'error: ' + (message.message || 'unknown');
+    tr.dataset.error = true;
+    tr.title = message.message || 'unknown error';
+    notify('HLS download failed: ' + (message.message || 'unknown'));
+  }
+  if (cell) {
+    cell.textContent = (tr.dataset.filename || '-') + ' [' + tr.dataset.hlsStatus + ']';
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, response) => {
-  if (message.cmd === 'update-id') {
+  if (message.panel === 'hls-progress') {
+    applyJob(message.id, message);
+  }
+  else if (message.cmd === 'update-id') {
     document.body.dataset.tabId = message.id;
     update();
   }
   else if (message.cmd === 'bring-to-front') {
     response(true);
     chrome.runtime.sendMessage({cmd: 'focus'});
+  }
+});
+
+// load items persisted by the background worker while the window was closed
+chrome.runtime.sendMessage({cmd: 'list-items'}, items => {
+  if (chrome.runtime.lastError || !items) {
+    return;
+  }
+  for (const item of items) {
+    if (urls.indexOf(item.url) !== -1) {
+      continue;
+    }
+    stats.total += 1;
+    stats.media += 1;
+    ui.append({
+      ...item,
+      stats
+    });
+  }
+  $.stats.textContent = stats.media + '/' + stats.total;
+  for (const [id, message] of Object.entries(pendingJobs)) {
+    applyJob(id, message);
   }
 });
 
@@ -467,4 +569,3 @@ addEventListener('resize', () => {
 addEventListener('beforeunload', () => {
   monitor.deactivate();
 });
-
